@@ -92,7 +92,7 @@ public class TabsFragmentActivity extends FragmentActivity implements TabHost.On
      * @see android.widget.TabHost.OnTabChangeListener#onTabChanged(java.lang.String)
      */
     public void onTabChanged(String tag) {
-        TabInfo newTab = (TabInfo) this.mapTabInfo.get(tag);
+        /*TabInfo newTab = (TabInfo) this.mapTabInfo.get(tag);
         if (mLastTab != newTab) {
             FragmentTransaction ft = this.getSupportFragmentManager().beginTransaction();
             if (mLastTab != null) {
@@ -113,7 +113,7 @@ public class TabsFragmentActivity extends FragmentActivity implements TabHost.On
             mLastTab = newTab;
             ft.commit();
             this.getSupportFragmentManager().executePendingTransactions();
-        }
+        }*/
     }
 
     private class TabInfo {

@@ -1,9 +1,11 @@
 package com.marz.snapprefs;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Application;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -13,8 +15,11 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.text.InputFilter;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
+import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -22,6 +27,7 @@ import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
 
+import com.marz.snapprefs.Util.FileUtils;
 import com.marz.snapprefs.Util.XposedUtils;
 
 import org.apache.http.HttpResponse;
@@ -44,11 +50,14 @@ import java.io.InputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -68,8 +77,10 @@ import static de.robv.android.xposed.XposedBridge.hookAllConstructors;
 import static de.robv.android.xposed.XposedBridge.hookAllMethods;
 import static de.robv.android.xposed.XposedHelpers.callMethod;
 import static de.robv.android.xposed.XposedHelpers.callStaticMethod;
+import static de.robv.android.xposed.XposedHelpers.findAndHookConstructor;
 import static de.robv.android.xposed.XposedHelpers.findAndHookMethod;
 import static de.robv.android.xposed.XposedHelpers.findClass;
+import static de.robv.android.xposed.XposedHelpers.getObjectField;
 import static de.robv.android.xposed.XposedHelpers.getStaticObjectField;
 import static de.robv.android.xposed.XposedHelpers.setObjectField;
 import static de.robv.android.xposed.XposedHelpers.setStaticIntField;
@@ -110,6 +121,17 @@ public class HookMethods implements IXposedHookInitPackageResources, IXposedHook
     public static String mCustomFilterLocation = "";
     public static String mConfirmationID = "";
     public static String mDeviceID = "";
+
+    public static String vibrationPattern = ""; //change vibration pattern
+    public static boolean mHideLive = false;
+    public static boolean mHideDiscover = false;
+    public static boolean mHidePeople = false;
+    public static String peopleToHide = "";
+    public static boolean mShowFavorites = false;
+    public static String favoritesList = "";
+    public static boolean mShowFavsOnTop = false;
+    public static boolean mVibrateChange = false;
+
     public static boolean mSaveSentSnaps = false;
     public static boolean mSortByCategory = true;
     public static boolean mSortByUsername = true;
@@ -209,6 +231,20 @@ public class HookMethods implements IXposedHookInitPackageResources, IXposedHook
         debug = prefs.getBoolean("pref_key_debug", false);
         mDeviceID = prefs.getString("device_id", null);
         mLicense = prefs.getInt(mDeviceID, 0);
+
+        mVibrateChange = prefs.getBoolean("pref_key_vibrate_change", false);
+        vibrationPattern = prefs.getString("pref_key_vibrate_set", "");
+        String read = FileUtils.readFromSDFile("storysettings").replaceAll("\n", "");
+        if(!read.equals("0")) {
+            String settings[] = read.split("#");
+            mHideDiscover = Boolean.parseBoolean(settings[0]);
+            mHideLive = Boolean.parseBoolean(settings[1]);
+            mHidePeople = Boolean.parseBoolean(settings[2]);
+            mShowFavorites = Boolean.parseBoolean(settings[3]);
+            peopleToHide = settings[4];
+            favoritesList = settings[5];
+            mShowFavsOnTop = Boolean.parseBoolean(settings[6]);
+        }
 
         //SAVING
 
@@ -342,6 +378,7 @@ public class HookMethods implements IXposedHookInitPackageResources, IXposedHook
         if (shouldAddGhost) {
             addGhost(resparam);
         }
+        addSnapprefsBtn(resparam);
         //if (mCustomFilterType == 0) {
             fullScreenFilter(resparam);
         //}
@@ -387,6 +424,87 @@ public class HookMethods implements IXposedHookInitPackageResources, IXposedHook
                 Premium.initViewed(lpparam, modRes, SnapContext);
             }
         }
+
+
+                Class<?> storiesfrag = findClass("com.snapchat.android.fragments.stories.StoriesFragment", lpparam.classLoader);
+                findAndHookMethod(storiesfrag, "D", new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        if(mHideDiscover || mHideLive || mHidePeople || mShowFavorites) {
+                            ArrayList f = (ArrayList) getObjectField(param.thisObject, "f");
+
+                            for (int i = f.size() - 1; i >= 0; i--) {
+                                Object o = f.get(i);
+                                String hotlinebling = o.toString();
+                                if (hotlinebling.substring(0, 2).contains("JM")) {
+                                    String username = callMethod(o, "i").toString();//I think these are the recent stories
+                                    //Logger.log(username);
+                                    if (mHidePeople) {
+                                        String[] people = peopleToHide.split(",");
+                                        for (String person : people) {
+                                            if (username.equals(person)) {
+                                                Logger.log("removing " + username);
+                                                f.remove(i);
+                                            }
+                                        }
+                                    }
+                                    if (mShowFavorites) {
+                                        String[] favs = favoritesList.split(",");
+                                        Set<String> favorites = new HashSet<String>(Arrays.asList(favs));
+                                        Logger.log(favorites.toString());
+                                        if (!favorites.contains(username)) {
+                                            if (!mShowFavsOnTop) {
+                                                Logger.log("removing " + username);
+                                                f.remove(i);
+                                                //f.add(0, b);
+                                            }
+                                        }else{
+                                            if (mShowFavsOnTop) {
+                                                Logger.log("removing " + username);
+                                                Object b = f.remove(i);
+                                                f.add(0, b);
+                                            }
+                                        }
+                                    }
+                                }
+                                //else if(hotlinebling.substring(0,2).contains("Jy"))       //All stories, but idk how to get the friend username since no method.
+                                //    Logger.log(getObjectField(, ));
+                                else if (hotlinebling.substring(0, 2).contains("Ps") && mHideLive)
+                                    f.remove(i); //this is a live story
+                                else if (hotlinebling.substring(0, 2).contains("Fl") && mHideDiscover)
+                                    f.remove(i); //discover
+                            }
+
+                            setObjectField(param.thisObject, "f", f);
+                        }
+                    }
+                });
+
+                Class<?> WR = findClass("WR", lpparam.classLoader);
+                findAndHookConstructor(WR, String.class, boolean.class, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        param.args[1] = true;
+                    }
+                });
+
+                findAndHookMethod("ai$d", lpparam.classLoader, "a", long[].class, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        if(mVibrateChange) {
+                            long[] test;
+                            String[] sa = vibrationPattern.split(",");
+                            test = new long[sa.length + 1];
+                            test[0] = 0;
+                            for (int i = 1; i < sa.length; i++)
+                                test[i] = Long.parseLong(sa[i - 1]);
+                            param.args[0] = test;
+                            Logger.log("Successfully set the vibration pattern!");
+                            Logger.log(vibrationPattern);
+                            Logger.log(Arrays.toString(test));
+                        }
+                    }
+                });
         /*findAndHookMethod("com.snapchat.android.Timber", lpparam.classLoader, "c", String.class, String.class, Object[].class, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
@@ -686,6 +804,212 @@ public class HookMethods implements IXposedHookInitPackageResources, IXposedHook
             }
         });
     }
+
+    public void addSnapprefsBtn(InitPackageResourcesParam resparam){
+        try {
+            resparam.res.hookLayout(Common.PACKAGE_SNAP, "layout", "stories", new XC_LayoutInflated() {
+                public void handleLayoutInflated(LayoutInflatedParam liparam) throws Throwable {
+                    final RelativeLayout relativeLayout = (RelativeLayout) liparam.view.findViewById(liparam.res.getIdentifier("top_panel", "id", Common.PACKAGE_SNAP));
+                    final RelativeLayout.LayoutParams layoutParams = new RelativeLayout.LayoutParams(liparam.view.findViewById(liparam.res.getIdentifier("myfriends_action_bar_search_button", "id", Common.PACKAGE_SNAP)).getLayoutParams());
+                    layoutParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+                    layoutParams.topMargin = px(8.0f);
+                    layoutParams.rightMargin = px(115.0f);
+                    final ImageView spbtn = new ImageView(SnapContext);
+                    //spbtn.setBackgroundColor(Color.GREEN);
+                    spbtn.setImageDrawable(mResources.getDrawable(R.drawable.logo));
+                    //spbtn.setScaleX((float) 0.75);
+                    //spbtn.setScaleY((float) 0.75);
+                    Logger.log("Adding Snapprefs button to story section");
+                    final Context myContext = SnapContext.createPackageContext("com.marz.snapprefs", Context.CONTEXT_IGNORE_SECURITY);
+
+                    spbtn.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            //Dialogs.MainDialog(SnapContext, editText);
+                            //logging("SnapPrefs: Displaying MainDialog");
+                            AlertDialog.Builder alert = new AlertDialog.Builder(SnapContext, AlertDialog.THEME_DEVICE_DEFAULT_LIGHT);
+                            try {
+                                View layout = LayoutInflater.from(myContext).inflate(R.layout.newdialog_layout, null);
+                                alert.setView(layout);
+
+                                Button editFavs = (Button) layout.findViewById(R.id.button3);
+                                Button editBlocked = (Button) layout.findViewById(R.id.button4);
+                                CheckBox removeLive = (CheckBox) layout.findViewById(R.id.checkBox3);
+                                CheckBox removeDiscover = (CheckBox) layout.findViewById(R.id.checkBox4);
+                                CheckBox showFavsOnTop = (CheckBox) layout.findViewById(R.id.checkBox5);
+                                final CheckBox enableBlocked = (CheckBox) layout.findViewById(R.id.checkBox2);
+                                final CheckBox enableFavorites = (CheckBox) layout.findViewById(R.id.checkBox);
+
+                                if (mHideLive)
+                                    removeLive.setChecked(true);
+                                if (mHideDiscover)
+                                    removeDiscover.setChecked(true);
+                                if (mHidePeople)
+                                    enableBlocked.setChecked(true);
+                                if (mShowFavorites)
+                                    enableFavorites.setChecked(true);
+                                if (mShowFavsOnTop)
+                                    showFavsOnTop.setChecked(true);
+
+                                editFavs.setOnClickListener(new View.OnClickListener() {
+                                    public void onClick(View v) {
+                                        AlertDialog.Builder alert = new AlertDialog.Builder(SnapContext);
+                                        View layout = LayoutInflater.from(myContext).inflate(R.layout.edit_favs_dialog, null);
+                                        alert.setView(layout);
+                                        final String existingNames = favoritesList;
+                                        final EditText names = (EditText) layout.findViewById(R.id.editText);
+                                        alert.setTitle("Favorite Usernames");
+                                        Logger.log(existingNames);
+                                        if (!existingNames.equals("") && existingNames != null && existingNames.length() > 0) {
+                                            names.setText(existingNames);
+                                        }
+                                        alert.setPositiveButton("Save", new DialogInterface.OnClickListener() {
+                                            public void onClick(DialogInterface dialog, int id) {
+                                                String newpat = names.getText().toString();
+                                                if (!newpat.equals(existingNames)) {
+                                                    //remove spaces
+                                                    newpat = newpat.replaceAll(" ", "");
+                                                    favoritesList = newpat;
+                                                    //pref.setSummary(newpat);
+                                                }
+                                            }
+                                        });
+                                        alert.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                                            public void onClick(DialogInterface dialog, int id) {
+                                                dialog.cancel();
+                                            }
+                                        });
+                                        AlertDialog alertDialog = alert.create();
+
+                                        // show it
+                                        alertDialog.show();
+                                    }
+                                });
+
+                                editBlocked.setOnClickListener(new View.OnClickListener() {
+                                    public void onClick(View v) {
+                                        AlertDialog.Builder alert = new AlertDialog.Builder(SnapContext);
+                                        View layout = LayoutInflater.from(myContext).inflate(R.layout.edit_blocked_dialog, null);
+                                        alert.setView(layout);
+                                        final String existingNames = peopleToHide;
+                                        final EditText names = (EditText) layout.findViewById(R.id.editText);
+                                        alert.setTitle("Blocked Story Usernames");
+                                        Logger.log(existingNames);
+                                        if (!existingNames.equals("") && existingNames != null && existingNames.length() > 0) {
+                                            names.setText(existingNames);
+                                        }
+                                        alert.setPositiveButton("Save", new DialogInterface.OnClickListener() {
+                                            public void onClick(DialogInterface dialog, int id) {
+                                                String newpat = names.getText().toString();
+                                                if (!newpat.equals(existingNames)) {
+                                                    //remove spaces
+                                                    newpat = newpat.replaceAll(" ", "");
+                                                    peopleToHide = newpat;
+                                                    //pref.setSummary(newpat);
+                                                }
+                                            }
+                                        });
+                                        alert.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                                            public void onClick(DialogInterface dialog, int id) {
+                                                dialog.cancel();
+                                            }
+                                        });
+                                        AlertDialog alertDialog = alert.create();
+
+                                        // show it
+                                        alertDialog.show();
+                                    }
+                                });
+
+                                removeLive.setOnClickListener(new View.OnClickListener() {
+                                    public void onClick(View v) {
+                                        if (((CheckBox) v).isChecked()) {
+                                            mHideLive = true;
+                                        }else {
+                                            mHideLive = false;
+                                        }
+                                    }
+                                });
+
+                                removeDiscover.setOnClickListener(new View.OnClickListener() {
+                                    public void onClick(View v) {
+                                        if (((CheckBox) v).isChecked()) {
+                                            mHideDiscover = true;
+                                        }else {
+                                            mHideDiscover = false;
+                                        }
+                                    }
+                                });
+
+                                enableBlocked.setOnClickListener(new View.OnClickListener() {
+                                    public void onClick(View v) {
+                                        if (((CheckBox) v).isChecked()) {
+                                            mHidePeople = true;
+                                            if(enableFavorites.isChecked()) {
+                                                enableFavorites.setChecked(false);
+                                                mShowFavorites = false;
+                                                Toast.makeText(SnapContext, "Whitelist and Blacklist cannot be on at the same time", Toast.LENGTH_SHORT).show();
+                                            }
+                                        }else {
+                                            mHidePeople = false;
+                                        }
+                                    }
+                                });
+
+                                enableFavorites.setOnClickListener(new View.OnClickListener() {
+                                    public void onClick(View v) {
+                                        if (((CheckBox) v).isChecked()) {
+                                            mShowFavorites = true;
+                                            if(enableBlocked.isChecked()) {
+                                                enableBlocked.setChecked(false);
+                                                mHidePeople = false;
+                                                Toast.makeText(SnapContext, "Whitelist and Blacklist cannot be on at the same time", Toast.LENGTH_SHORT).show();
+                                            }
+                                        }else {
+                                            mShowFavorites = false;
+                                        }
+                                    }
+                                });
+
+                                showFavsOnTop.setOnClickListener(new View.OnClickListener() {
+                                    public void onClick(View v) {
+                                        if (((CheckBox) v).isChecked()) {
+                                            mShowFavsOnTop = true;
+                                        }else {
+                                            mShowFavsOnTop = false;
+                                        }
+                                    }
+                                });
+
+                            } catch (Exception e) {
+                                Logger.log("could not inflate view");
+                            }
+                            //alert.setTitle("Snapprefs Story Settings");
+                            alert.setNeutralButton("Close", new DialogInterface.OnClickListener() {
+                                public void onClick(DialogInterface dialog, int id) {
+                                    dialog.cancel();
+                                    FileUtils.writeToSDFile(mHideDiscover+"#"+mHideLive+"#"+mHidePeople+"#"+mShowFavorites+"#"+peopleToHide+"#"+favoritesList+"#"+mShowFavsOnTop, "storysettings");
+                                    Toast.makeText(SnapContext, "Pull to refresh to view changes", Toast.LENGTH_SHORT).show();
+                                }
+                            });
+                            AlertDialog alertDialog = alert.create();
+                            alertDialog.show();
+                        }
+                    });
+
+                    SnapContext.runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            relativeLayout.addView(spbtn, layoutParams);
+                        }
+                    });
+                }
+            });
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+    }
+
     public void addGhost(InitPackageResourcesParam resparam) {
         resparam.res.hookLayout(Common.PACKAGE_SNAP, "layout", "snap_preview", new XC_LayoutInflated() {
             public void handleLayoutInflated(LayoutInflatedParam liparam) throws Throwable {

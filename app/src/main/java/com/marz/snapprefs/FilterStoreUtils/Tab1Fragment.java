@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
@@ -20,6 +22,7 @@ import android.widget.ImageView;
 import com.marz.snapprefs.R;
 
 import java.io.File;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 
 /**
@@ -214,6 +217,15 @@ public class Tab1Fragment extends Fragment {
         @Override
         public View getView(int position, View convertView, ViewGroup parent) {
             ImageView imageView;
+            imageView = new ImageView(mContext);
+            imageView.setLayoutParams(new GridView.LayoutParams(220, 391));
+            imageView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            imageView.setPadding(8, 8, 8, 8);
+            Drawable dr = getResources().getDrawable(R.drawable.loading);
+            Bitmap bitmap = ((BitmapDrawable) dr).getBitmap();
+            Drawable d = new BitmapDrawable(getResources(), Bitmap.createScaledBitmap(bitmap, 220, 391, true));
+            imageView.setImageDrawable(d);
+            /*
             if (convertView == null) { // if it's not recycled, initialize some
                 // attributes
                 imageView = new ImageView(mContext);
@@ -223,55 +235,90 @@ public class Tab1Fragment extends Fragment {
 
             } else {
                 imageView = (ImageView) convertView;
-            }
+            }*/
 
-            Bitmap bm = decodeSampledBitmapFromUri(itemList.get(position), 220,
-                    391);
+            //Bitmap bm = decodeSampledBitmapFromUri(itemList.get(position), 220,
+            //       391);
 
-            imageView.setImageBitmap(bm);
+            //imageView.setImageBitmap(bm);
+            BitmapWorkerTask bwt = new BitmapWorkerTask(imageView, position);
+            bwt.execute();
             return imageView;
         }
 
-        public Bitmap decodeSampledBitmapFromUri(String path, int reqWidth,
-                                                 int reqHeight) {
+        class BitmapWorkerTask extends AsyncTask<Integer, Void, Bitmap> {
+            //private final WeakReference<ImageView> imageViewReference;
+            private ImageView iv = null;
+            private int data = 0;
 
-            Bitmap bm = null;
-            // First decode with inJustDecodeBounds=true to check dimensions
-            final BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inJustDecodeBounds = true;
-            BitmapFactory.decodeFile(path, options);
+            public BitmapWorkerTask(ImageView imageView, int position) {
+                // Use a WeakReference to ensure the ImageView can be garbage collected
+                iv = imageView;
+                //imageViewReference = new WeakReference<ImageView>(imageView);
+                data = position;
+            }
 
-            // Calculate inSampleSize
-            options.inSampleSize = calculateInSampleSize(options, reqWidth,
-                    reqHeight);
+            // Decode image in background.
+            @Override
+            protected Bitmap doInBackground(Integer... params) {
+                Bitmap bm = decodeSampledBitmapFromUri(itemList.get(data), 220,
+                        391);
+                return bm;
+            }
 
-            // Decode bitmap with inSampleSize set
-            options.inJustDecodeBounds = false;
-            bm = BitmapFactory.decodeFile(path, options);
-
-
-            return bm;
-        }
-
-        public int calculateInSampleSize(
-
-                BitmapFactory.Options options, int reqWidth, int reqHeight) {
-            // Raw height and width of image
-            final int height = options.outHeight;
-            final int width = options.outWidth;
-            int inSampleSize = 1;
-
-            if (height > reqHeight || width > reqWidth) {
-                if (width > height) {
-                    inSampleSize = Math.round((float) height
-                            / (float) reqHeight);
-                } else {
-                    inSampleSize = Math.round((float) width / (float) reqWidth);
+            // Once complete, see if ImageView is still around and set bitmap.
+            @Override
+            protected void onPostExecute(Bitmap bitmap) {
+                if (iv != null && bitmap != null) {
+                    final ImageView imageView = iv;
+                    if (imageView != null) {
+                        imageView.setImageBitmap(bitmap);
+                    }
                 }
             }
 
-            return inSampleSize;
+            public Bitmap decodeSampledBitmapFromUri(String path, int reqWidth,
+                                                     int reqHeight) {
+
+                Bitmap bm = null;
+                // First decode with inJustDecodeBounds=true to check dimensions
+                final BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inJustDecodeBounds = true;
+                BitmapFactory.decodeFile(path, options);
+
+                // Calculate inSampleSize
+                options.inSampleSize = calculateInSampleSize(options, reqWidth,
+                        reqHeight);
+
+                // Decode bitmap with inSampleSize set
+                options.inJustDecodeBounds = false;
+                bm = BitmapFactory.decodeFile(path, options);
+
+
+                return bm;
+            }
+
+            public int calculateInSampleSize(
+
+                    BitmapFactory.Options options, int reqWidth, int reqHeight) {
+                // Raw height and width of image
+                final int height = options.outHeight;
+                final int width = options.outWidth;
+                int inSampleSize = 1;
+
+                if (height > reqHeight || width > reqWidth) {
+                    if (width > height) {
+                        inSampleSize = Math.round((float) height
+                                / (float) reqHeight);
+                    } else {
+                        inSampleSize = Math.round((float) width / (float) reqWidth);
+                    }
+                }
+
+                return inSampleSize;
+            }
         }
+
 
     }
 }

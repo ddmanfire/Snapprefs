@@ -12,6 +12,15 @@
                 android:key="pref_key_hidebf"
                 android:summary="@string/hidebf_summary"
                 android:title="@string/hidebf_text" />
+            <CheckBoxPreference
+                android:defaultValue="false"
+                android:key="pref_key_vibrate_change"
+                android:summary="Enable custom notification vibrate pattern (disable for default)"
+                android:title="Enable custom notification vibrate pattern" />
+            <Preference
+                android:key="pref_key_vibrate_set"
+                android:summary="Click here to set vibration pattern"
+                android:title="Set vibration pattern" />
             <!--    <CheckBoxPreference
                     android:defaultValue="false"
                     android:key="pref_key_hiderecent"
